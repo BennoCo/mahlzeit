@@ -1,6 +1,5 @@
 const https = require('https');
 
-const SUPABASE_URL = 'https://hkwibmfcjvwseewxdrfj.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 function fetch(url) {
@@ -38,86 +37,135 @@ function supabaseUpdate(name, daily) {
   });
 }
 
-// Wochentag auf Deutsch
 function getDayName() {
   const days = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
   return days[new Date().getDay()];
 }
 
-// Zum chalte Brunne â€” liest das Wochenmenu und gibt den heutigen Tag zurÃ¼ck
+function htmlToText(html) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/h[1-6]>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#x27;/g, "'")
+    .replace(/\r/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// Zum chalte Brunne â€” liest Titel + komplette Beschreibung fÃ¼r den heutigen Tag
 async function scrapeChalteBrunne() {
   try {
     const html = await fetch('https://www.zumchaltebrunne.ch/menu');
+    const text = htmlToText(html);
     const day = getDayName();
 
-    // Suche nach "### Dienstag" etc. und extrahiere Titel + Beschreibung
-    const dayRegex = new RegExp(
-      `###\\s*${day}\\s*\\n+\\*\\*(.+?)\\*\\*\\s*\\n+([^#]+?)(?=###|$)`,
-      'i'
-    );
+    // Isoliere den Mittagsmenu-Bereich
+    const menuStart = text.search(/Mittagsmenu\s*-\s*KW/i);
+    if (menuStart === -1) { console.log('Chaltebrunne: Kein KW-Abschnitt gefunden'); return; }
+    const menuSection = text.substring(menuStart, menuStart + 3000);
 
-    // HTML zu Text
-    const text = html
-      .replace(/<script[\s\S]*?<\/script>/gi, '')
-      .replace(/<style[\s\S]*?<\/style>/gi, '')
-      .replace(/<[^>]+>/g, '\n')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/\n{3,}/g, '\n\n');
+    const lines = menuSection.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-    const match = text.match(dayRegex);
-    if (match) {
-      const title = match[1].trim();
-      const desc = match[2].replace(/\s+/g, ' ').trim().substring(0, 120);
-      const menu = desc ? `${title} â€” ${desc}` : title;
-      await supabaseUpdate('Zum chalte Brunne', menu);
-    } else {
-      // Fallback: Suche nur nach Tagesname + nÃ¤chste Zeile
-      const fallback = new RegExp(`${day}[\\s\\S]{0,20}\\*\\*(.+?)\\*\\*`, 'i');
-      const fb = text.match(fallback);
-      if (fb) {
-        await supabaseUpdate('Zum chalte Brunne', fb[1].trim());
-      } else {
-        console.log(`Chaltebrunne: Kein Eintrag fÃ¼r ${day} gefunden`);
+    // Finde den Index des Wochentags
+    let dayIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim() === day || lines[i].trim().endsWith(day)) {
+        dayIdx = i;
+        break;
       }
+    }
+
+    if (dayIdx === -1) {
+      // Flexiblere Suche
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].toLowerCase().includes(day.toLowerCase())) {
+          dayIdx = i;
+          break;
+        }
+      }
+    }
+
+    if (dayIdx === -1) { console.log(`Chaltebrunne: Kein Eintrag fÃ¼r ${day}`); return; }
+
+    // NÃ¤chste Wochentage als Stopper
+    const nextDays = ['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag']
+      .filter(d => d !== day);
+
+    // Sammle alle Zeilen bis zum nÃ¤chsten Wochentag
+    const menuLines = [];
+    for (let i = dayIdx + 1; i < lines.length; i++) {
+      const line = lines[i].replace(/\*\*/g, '').trim();
+      // Stopp bei nÃ¤chstem Tag oder Sections-Header
+      if (nextDays.some(d => line === d || line.endsWith(d))) break;
+      if (line.toLowerCase().includes('takeaway') || line.toLowerCase().includes('take-away')) break;
+      if (line.length > 3) menuLines.push(line);
+    }
+
+    if (menuLines.length > 0) {
+      // Titel (erste Zeile) + Beschreibung (rest)
+      const result = menuLines.join('\n').substring(0, 300);
+      await supabaseUpdate('Zum chalte Brunne', result);
+    } else {
+      console.log(`Chaltebrunne: Keine MenÃ¼zeilen fÃ¼r ${day}`);
     }
   } catch (e) {
     console.error('Chaltebrunne Fehler:', e.message);
   }
 }
 
-// Karl der Grosse â€” liest das Tagesmenu
+// Karl der Grosse
 async function scrapeKarl() {
   try {
     const html = await fetch('https://www.karldergrosse.ch/bistro/karte');
+    const text = htmlToText(html);
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-    const text = html
-      .replace(/<script[\s\S]*?<\/script>/gi, '')
-      .replace(/<style[\s\S]*?<\/style>/gi, '')
-      .replace(/<[^>]+>/g, '\n')
-      .replace(/&amp;/g, '&')
-      .replace(/\n{3,}/g, '\n\n');
+    let inTagesmenu = false;
+    const menuLines = [];
 
-    // Tagesmenu-Abschnitt
-    const match = text.match(/Tagesmenu[\s\S]{0,600}?(?=Hauptgerichte|##|$)/i);
-    if (match) {
-      let menu = match[0].replace(/\s+/g, ' ').trim();
-      // "Heute gibt es keine Tagesgerichte" abfangen
-      if (menu.toLowerCase().includes('keine tagesgerichte') || menu.length < 30) {
-        // Fallback auf Hauptgerichte
-        const main = text.match(/Hauptgerichte([\s\S]{0,400}?)(?=Vorspeisen|##)/i);
-        if (main) {
-          menu = main[1].replace(/\s+/g, ' ').trim().substring(0, 200);
-          await supabaseUpdate('Karl der Grosse', 'Hauptgerichte: ' + menu);
-        } else {
-          console.log('Karl: Kein Tagesmenu heute');
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].toLowerCase().includes('tagesmenu')) { inTagesmenu = true; continue; }
+      if (inTagesmenu) {
+        if (/hauptgerichte|vorspeisen|snacks|sÃ¼sses/i.test(lines[i])) break;
+        if (/keine tagesgerichte/i.test(lines[i])) {
+          console.log('Karl: Heute kein Tagesmenu â€” nutze Hauptgerichte');
+          inTagesmenu = false; break;
         }
-        return;
+        if (lines[i].length > 4) menuLines.push(lines[i]);
       }
-      await supabaseUpdate('Karl der Grosse', menu.substring(0, 200));
+    }
+
+    if (menuLines.length > 0) {
+      await supabaseUpdate('Karl der Grosse', menuLines.join('\n').substring(0, 300));
+      return;
+    }
+
+    // Fallback: Hauptgerichte
+    let inMain = false;
+    const mainLines = [];
+    for (const line of lines) {
+      if (/hauptgerichte/i.test(line)) { inMain = true; continue; }
+      if (inMain && /vorspeisen|snacks|sÃ¼sses/i.test(line)) break;
+      if (inMain && line.length > 8 && !/^\d+[\.,]/.test(line) && !/^CHF/i.test(line)) {
+        mainLines.push(line);
+        if (mainLines.length >= 4) break;
+      }
+    }
+    if (mainLines.length > 0) {
+      await supabaseUpdate('Karl der Grosse', mainLines.join('\n').substring(0, 300));
     } else {
-      console.log('Karl: Kein Tagesmenu-Abschnitt gefunden');
+      console.log('Karl: Kein MenÃ¼ gefunden');
     }
   } catch (e) {
     console.error('Karl Fehler:', e.message);
