@@ -64,10 +64,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .hours-list{padding:0 24px;display:flex;flex-direction:column;gap:10px;}
 .hcard{background:var(--card);border-radius:16px;padding:14px 16px;box-shadow:0 1px 8px rgba(0,0,0,.05);}
 .hcard-name{font-size:15px;font-weight:800;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;}
-.hgrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 0;}
-.hday{font-size:12px;color:var(--muted);font-weight:500;padding:2px 0;}
-.htime{font-size:12px;font-weight:700;text-align:right;padding:2px 0;}
+.hgrid{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:start;}
+.hday{font-size:12px;color:var(--muted);font-weight:500;padding:2px 0;white-space:nowrap;}
+.htime{font-size:12px;font-weight:700;text-align:right;padding:2px 0;line-height:1.6;}
 .htime.today{color:var(--green);}
+.htime .slot{display:block;}
 .adm{padding:20px 24px;}
 .adm h2{font-size:22px;font-weight:800;margin-bottom:16px;}
 .acard{background:var(--card);border-radius:16px;padding:14px 16px;margin-bottom:10px;box-shadow:0 1px 8px rgba(0,0,0,.05);}
@@ -141,10 +142,21 @@ const todayStr=now.toISOString().split('T')[0];
 document.getElementById('tdate').textContent=now.toLocaleDateString('de-CH',{weekday:'long',day:'numeric',month:'long'});
 
 let rests=[],votes=[],isAnon=false,editId=null,curIdx=0;
-const BG=['#C8956C','#5A7A4A','#4A3728','#8B4513','#C0392B','#3A5A2A','#8B4513','#6A7A4A','#2A5A8A'];
+const BG=['#C8956C','#5A7A4A','#4A3728','#8B4513','#C0392B','#3A5A2A','#8B6A4A','#6A7A4A','#2A5A8A','#7A4A6A','#4A6A7A','#6A4A3A','#3A6A4A'];
 
 function setStatus(live,msg){document.getElementById('sdot').className='sdot'+(live?' live':' err');document.getElementById('stext').textContent=msg;}
-function isOpen(r){const t=r['hours_'+tk.toLowerCase()];if(!t||t==='–')return false;try{const[s,e]=t.split('–');const m=x=>{const p=x.trim().split(':');return+p[0]*60+(+p[1]||0);};const c=now.getHours()*60+now.getMinutes();return c>=m(s)&&c<=m(e);}catch(e){return false;}}
+
+function isOpen(r){
+  const t=r['hours_'+tk.toLowerCase()];
+  if(!t||t==='–') return false;
+  try{
+    const slots=t.split('&').map(s=>s.trim());
+    const m=x=>{const p=x.trim().split(':');return+p[0]*60+(+p[1]||0);};
+    const c=now.getHours()*60+now.getMinutes();
+    return slots.some(slot=>{const[s,e]=slot.split('–');return c>=m(s)&&c<=m(e);});
+  }catch(e){return false;}
+}
+
 function me(){return isAnon?'Anonym':(document.getElementById('uname').value.trim()||'Gast');}
 function votesFor(rid){return votes.filter(v=>v.restaurant_id===rid&&v.vote_date===todayStr);}
 function iVoted(rid){return votesFor(rid).some(v=>v.user_name===me());}
@@ -158,7 +170,7 @@ function renderCar(){
   document.getElementById('lmsg').style.display='none';c.style.display='flex';
   c.innerHTML=rests.map((r,i)=>{
     const open=isOpen(r),voted=iVoted(r.id),vlist=votesFor(r.id);
-    return`<div class="card"><div class="card-img" style="background:${BG[i%9]}">${r.emoji||'🍽'}<div class="overlay"></div><span class="obadge ${open?'open':'closed'}">${open?'Geöffnet':'Geschlossen'}</span></div><div class="card-body"><div class="card-name">${r.name}</div><div class="card-meta"><span class="card-type">${r.type}</span><span class="card-dist">${r.dist}</span></div><div class="daily"><div class="daily-label">Angebot</div><div class="daily-text">${r.daily||'–'}</div><div class="daily-price">${r.price||''}</div>${r.url?`<a class="daily-link" href="${r.url}" target="_blank">→ Website</a>`:''}</div><div class="vote-row"><button class="vote-btn ${voted?'voted':''}" onclick="toggleVote(${r.id})">${voted?'✓ Bin dabei':'Ich gehe mit'}</button><div class="voters">${vlist.length===0?'<span style="font-size:11px;color:var(--muted)">Noch niemand</span>':vlist.map(v=>`<span class="vp${v.user_name===myName?' me':''}">${v.user_name}</span>`).join('')}</div></div></div></div>`;
+    return`<div class="card"><div class="card-img" style="background:${BG[i%13]}">${r.emoji||'🍽'}<div class="overlay"></div><span class="obadge ${open?'open':'closed'}">${open?'Geöffnet':'Geschlossen'}</span></div><div class="card-body"><div class="card-name">${r.name}</div><div class="card-meta"><span class="card-type">${r.type}</span><span class="card-dist">${r.dist}</span></div><div class="daily"><div class="daily-label">Angebot</div><div class="daily-text">${r.daily||'–'}</div><div class="daily-price">${r.price||''}</div>${r.url?`<a class="daily-link" href="${r.url}" target="_blank">→ Website</a>`:''}</div><div class="vote-row"><button class="vote-btn ${voted?'voted':''}" onclick="toggleVote(${r.id})">${voted?'✓ Bin dabei':'Ich gehe mit'}</button><div class="voters">${vlist.length===0?'<span style="font-size:11px;color:var(--muted)">Noch niemand</span>':vlist.map(v=>`<span class="vp${v.user_name===myName?' me':''}">${v.user_name}</span>`).join('')}</div></div></div></div>`;
   }).join('');
   renderDots();
 }
@@ -180,7 +192,19 @@ function showTab(n,el){document.querySelectorAll('.tab').forEach(t=>t.classList.
 
 function renderH(){
   const do2=['Mo','Di','Mi','Do','Fr','Sa','So'];let h='';
-  rests.forEach(r=>{const open=isOpen(r);h+=`<div class="hcard"><div class="hcard-name">${r.name}<span class="obadge ${open?'open':'closed'}" style="font-size:11px;padding:3px 9px;">${open?'Offen':'Zu'}</span></div><div class="hgrid">${do2.map(d=>`<span class="hday">${DFL[d]}</span><span class="htime${d===tk?' today':''}">${r['hours_'+d.toLowerCase()]||'–'}</span>`).join('')}</div></div>`;});
+  rests.forEach(r=>{
+    const open=isOpen(r);
+    h+=`<div class="hcard"><div class="hcard-name">${r.name}<span class="obadge ${open?'open':'closed'}" style="font-size:11px;padding:3px 9px;">${open?'Offen':'Zu'}</span></div><div class="hgrid">${
+      do2.map(d=>{
+        const t=r['hours_'+d.toLowerCase()]||'–';
+        const isToday=d===tk;
+        const formatted=t.includes('&')
+          ?t.split('&').map(s=>`<span class="slot">${s.trim()}</span>`).join('')
+          :t;
+        return`<span class="hday">${DFL[d]}</span><span class="htime${isToday?' today':''}">${formatted}</span>`;
+      }).join('')
+    }</div></div>`;
+  });
   document.getElementById('hlist').innerHTML=h||'<div class="loading">Keine Daten</div>';
 }
 
