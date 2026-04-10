@@ -30,7 +30,7 @@ function supabaseUpdate(name, daily) {
     const req = https.request(options, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
-      res.on('end', () => { console.log(`Updated ${name}: ${daily}`); resolve(); });
+      res.on('end', () => { console.log(`âœ“ Updated "${name}": ${daily}`); resolve(); });
     });
     req.on('error', reject);
     req.write(body);
@@ -38,60 +38,96 @@ function supabaseUpdate(name, daily) {
   });
 }
 
-// Karl der Grosse scraper
-async function scrapeKarl() {
-  try {
-    const html = await fetch('https://www.karldergrosse.ch/bistro/karte');
-    // Tagesmenu extrahieren
-    const match = html.match(/Tagesmenu[\s\S]*?<\/section>/i) ||
-                  html.match(/Tagesgericht[\s\S]{0,500}/i) ||
-                  html.match(/Heute gibt es([\s\S]{0,300}?)(?=<\/p>|<h[1-6])/i);
-    if (match) {
-      // HTML tags entfernen
-      let menu = match[0].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-      menu = menu.substring(0, 200);
-      if (menu.length > 20) {
-        await supabaseUpdate('Karl der Grosse', menu);
-        return;
-      }
-    }
-    // Fallback: Hauptgerichte extrahieren
-    const mainMatch = html.match(/Hauptgerichte([\s\S]{0,800}?)(?=##|Vorspeisen)/i);
-    if (mainMatch) {
-      let menu = mainMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 200);
-      await supabaseUpdate('Karl der Grosse', menu);
-    } else {
-      console.log('Karl: Kein MenÃ¼ gefunden, Ã¼berspringe Update');
-    }
-  } catch (e) {
-    console.error('Karl scrape error:', e.message);
-  }
+// Wochentag auf Deutsch
+function getDayName() {
+  const days = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
+  return days[new Date().getDay()];
 }
 
-// Zum chalte Brunne scraper
+// Zum chalte Brunne â€” liest das Wochenmenu und gibt den heutigen Tag zurÃ¼ck
 async function scrapeChalteBrunne() {
   try {
     const html = await fetch('https://www.zumchaltebrunne.ch/menu');
-    // Wochenmenu extrahieren
-    const match = html.match(/Mittagsmenu diese Woche([\s\S]{0,1000}?)(?=##|<\/section>|Schweizer Bratwurst)/i) ||
-                  html.match(/Wochenmenu([\s\S]{0,800}?)(?=##|<\/section>)/i) ||
-                  html.match(/Mittagsmen[uÃ¼]([\s\S]{0,600}?)(?=##|<\/section>)/i);
+    const day = getDayName();
+
+    // Suche nach "### Dienstag" etc. und extrahiere Titel + Beschreibung
+    const dayRegex = new RegExp(
+      `###\\s*${day}\\s*\\n+\\*\\*(.+?)\\*\\*\\s*\\n+([^#]+?)(?=###|$)`,
+      'i'
+    );
+
+    // HTML zu Text
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, '\n')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/\n{3,}/g, '\n\n');
+
+    const match = text.match(dayRegex);
     if (match) {
-      let menu = match[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 200);
-      if (menu.length > 20) {
-        await supabaseUpdate('Zum chalte Brunne', menu);
-        return;
+      const title = match[1].trim();
+      const desc = match[2].replace(/\s+/g, ' ').trim().substring(0, 120);
+      const menu = desc ? `${title} â€” ${desc}` : title;
+      await supabaseUpdate('Zum chalte Brunne', menu);
+    } else {
+      // Fallback: Suche nur nach Tagesname + nÃ¤chste Zeile
+      const fallback = new RegExp(`${day}[\\s\\S]{0,20}\\*\\*(.+?)\\*\\*`, 'i');
+      const fb = text.match(fallback);
+      if (fb) {
+        await supabaseUpdate('Zum chalte Brunne', fb[1].trim());
+      } else {
+        console.log(`Chaltebrunne: Kein Eintrag fÃ¼r ${day} gefunden`);
       }
     }
-    console.log('Chaltebrunne: Kein MenÃ¼ gefunden, Ã¼berspringe Update');
   } catch (e) {
-    console.error('Chaltebrunne scrape error:', e.message);
+    console.error('Chaltebrunne Fehler:', e.message);
+  }
+}
+
+// Karl der Grosse â€” liest das Tagesmenu
+async function scrapeKarl() {
+  try {
+    const html = await fetch('https://www.karldergrosse.ch/bistro/karte');
+
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, '\n')
+      .replace(/&amp;/g, '&')
+      .replace(/\n{3,}/g, '\n\n');
+
+    // Tagesmenu-Abschnitt
+    const match = text.match(/Tagesmenu[\s\S]{0,600}?(?=Hauptgerichte|##|$)/i);
+    if (match) {
+      let menu = match[0].replace(/\s+/g, ' ').trim();
+      // "Heute gibt es keine Tagesgerichte" abfangen
+      if (menu.toLowerCase().includes('keine tagesgerichte') || menu.length < 30) {
+        // Fallback auf Hauptgerichte
+        const main = text.match(/Hauptgerichte([\s\S]{0,400}?)(?=Vorspeisen|##)/i);
+        if (main) {
+          menu = main[1].replace(/\s+/g, ' ').trim().substring(0, 200);
+          await supabaseUpdate('Karl der Grosse', 'Hauptgerichte: ' + menu);
+        } else {
+          console.log('Karl: Kein Tagesmenu heute');
+        }
+        return;
+      }
+      await supabaseUpdate('Karl der Grosse', menu.substring(0, 200));
+    } else {
+      console.log('Karl: Kein Tagesmenu-Abschnitt gefunden');
+    }
+  } catch (e) {
+    console.error('Karl Fehler:', e.message);
   }
 }
 
 (async () => {
-  console.log('Starte MenÃ¼-Scraper...');
-  await scrapeKarl();
+  const day = getDayName();
+  console.log(`Mahlzeit Scraper â€” ${day}`);
   await scrapeChalteBrunne();
+  await scrapeKarl();
   console.log('Fertig.');
 })();
