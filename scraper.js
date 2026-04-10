@@ -1,5 +1,4 @@
 const https = require('https');
-
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 function fetch(url) {
@@ -27,9 +26,9 @@ function supabaseUpdate(name, daily) {
       }
     };
     const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => { console.log(`âœ“ Updated "${name}": ${daily}`); resolve(); });
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => { console.log(`âœ“ Updated "${name}":\n${daily}`); resolve(); });
     });
     req.on('error', reject);
     req.write(body);
@@ -38,8 +37,7 @@ function supabaseUpdate(name, daily) {
 }
 
 function getDayName() {
-  const days = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
-  return days[new Date().getDay()];
+  return ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'][new Date().getDay()];
 }
 
 function htmlToText(html) {
@@ -50,81 +48,59 @@ function htmlToText(html) {
     .replace(/<\/p>/gi, '\n')
     .replace(/<\/h[1-6]>/gi, '\n')
     .replace(/<\/div>/gi, '\n')
-    .replace(/<\/li>/gi, '\n')
     .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&#x27;/g, "'")
-    .replace(/\r/g, '')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ')
+    .replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-// Zum chalte Brunne â€” liest Titel + komplette Beschreibung fÃ¼r den heutigen Tag
 async function scrapeChalteBrunne() {
   try {
     const html = await fetch('https://www.zumchaltebrunne.ch/menu');
     const text = htmlToText(html);
     const day = getDayName();
 
-    // Isoliere den Mittagsmenu-Bereich
     const menuStart = text.search(/Mittagsmenu\s*-\s*KW/i);
-    if (menuStart === -1) { console.log('Chaltebrunne: Kein KW-Abschnitt gefunden'); return; }
+    if (menuStart === -1) { console.log('Chaltebrunne: Kein KW-Abschnitt'); return; }
     const menuSection = text.substring(menuStart, menuStart + 3000);
-
     const lines = menuSection.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-    // Finde den Index des Wochentags
+    const allDays = ['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag'];
+    const otherDays = allDays.filter(d => d !== day);
+    const stopWords = ['was unser', 'bio-fleisch', 'tÃ¤glich frisch', 'biologische', 'mittagsmenus', 'Ã¶ffnungszeiten', 'reservierung', 'takeaway', 'take-away', 'jetzt'];
+
     let dayIdx = -1;
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i].trim() === day || lines[i].trim().endsWith(day)) {
-        dayIdx = i;
-        break;
-      }
+      if (lines[i].trim() === day || lines[i].toLowerCase() === day.toLowerCase()) { dayIdx = i; break; }
     }
-
     if (dayIdx === -1) {
-      // Flexiblere Suche
       for (let i = 0; i < lines.length; i++) {
-        if (lines[i].toLowerCase().includes(day.toLowerCase())) {
-          dayIdx = i;
-          break;
-        }
+        if (lines[i].toLowerCase().includes(day.toLowerCase())) { dayIdx = i; break; }
       }
     }
+    if (dayIdx === -1) { console.log(`Chaltebrunne: ${day} nicht gefunden`); return; }
 
-    if (dayIdx === -1) { console.log(`Chaltebrunne: Kein Eintrag fÃ¼r ${day}`); return; }
-
-    // NÃ¤chste Wochentage als Stopper
-    const nextDays = ['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag']
-      .filter(d => d !== day);
-
-    // Sammle alle Zeilen bis zum nÃ¤chsten Wochentag
     const menuLines = [];
     for (let i = dayIdx + 1; i < lines.length; i++) {
       const line = lines[i].replace(/\*\*/g, '').trim();
-      // Stopp bei nÃ¤chstem Tag oder Sections-Header
-      if (nextDays.some(d => line === d || line.endsWith(d))) break;
-      if (line.toLowerCase().includes('takeaway') || line.toLowerCase().includes('take-away')) break;
+      // Stopp bei nÃ¤chstem Tag
+      if (otherDays.some(d => line === d)) break;
+      // Stopp bei generischen Beschreibungstexten
+      if (stopWords.some(w => line.toLowerCase().startsWith(w))) break;
+      // Maximal Titel + 1 Beschreibungszeile
+      if (menuLines.length >= 2) break;
       if (line.length > 3) menuLines.push(line);
     }
 
     if (menuLines.length > 0) {
-      // Titel (erste Zeile) + Beschreibung (rest)
-      const result = menuLines.join('\n').substring(0, 300);
-      await supabaseUpdate('Zum chalte Brunne', result);
+      await supabaseUpdate('Zum chalte Brunne', menuLines.join('\n'));
     } else {
-      console.log(`Chaltebrunne: Keine MenÃ¼zeilen fÃ¼r ${day}`);
+      console.log(`Chaltebrunne: Keine Zeilen fÃ¼r ${day}`);
     }
   } catch (e) {
     console.error('Chaltebrunne Fehler:', e.message);
   }
 }
 
-// Karl der Grosse
 async function scrapeKarl() {
   try {
     const html = await fetch('https://www.karldergrosse.ch/bistro/karte');
@@ -133,15 +109,11 @@ async function scrapeKarl() {
 
     let inTagesmenu = false;
     const menuLines = [];
-
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i].toLowerCase().includes('tagesmenu')) { inTagesmenu = true; continue; }
+      if (/tagesmenu/i.test(lines[i])) { inTagesmenu = true; continue; }
       if (inTagesmenu) {
         if (/hauptgerichte|vorspeisen|snacks|sÃ¼sses/i.test(lines[i])) break;
-        if (/keine tagesgerichte/i.test(lines[i])) {
-          console.log('Karl: Heute kein Tagesmenu â€” nutze Hauptgerichte');
-          inTagesmenu = false; break;
-        }
+        if (/keine tagesgerichte/i.test(lines[i])) { inTagesmenu = false; break; }
         if (lines[i].length > 4) menuLines.push(lines[i]);
       }
     }
@@ -173,8 +145,7 @@ async function scrapeKarl() {
 }
 
 (async () => {
-  const day = getDayName();
-  console.log(`Mahlzeit Scraper â€” ${day}`);
+  console.log(`Mahlzeit Scraper â€” ${getDayName()}`);
   await scrapeChalteBrunne();
   await scrapeKarl();
   console.log('Fertig.');
