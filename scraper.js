@@ -60,7 +60,7 @@ async function scrapeChalteBrunne() {
     const day = getDayName();
 
     const menuStart = text.search(/Mittagsmenu\s*-\s*KW/i);
-    if (menuStart === -1) { console.log('Chaltebrunne: Kein KW-Abschnitt'); return; }
+    if (menuStart === -1) { await supabaseUpdate('Zum chalte Brunne', 'Heute kein MittagsmenÃ¼'); return; }
     const menuSection = text.substring(menuStart, menuStart + 3000);
     const lines = menuSection.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
@@ -77,7 +77,7 @@ async function scrapeChalteBrunne() {
         if (lines[i].toLowerCase().includes(day.toLowerCase())) { dayIdx = i; break; }
       }
     }
-    if (dayIdx === -1) { console.log(`Chaltebrunne: ${day} nicht gefunden`); return; }
+    if (dayIdx === -1) { await supabaseUpdate('Zum chalte Brunne', 'Heute kein MittagsmenÃ¼'); return; }
 
     const menuLines = [];
     for (let i = dayIdx + 1; i < lines.length; i++) {
@@ -94,7 +94,7 @@ async function scrapeChalteBrunne() {
     if (menuLines.length > 0) {
       await supabaseUpdate('Zum chalte Brunne', menuLines.join('\n'));
     } else {
-      console.log(`Chaltebrunne: Keine Zeilen fÃ¼r ${day}`);
+      await supabaseUpdate('Zum chalte Brunne', 'Heute kein MittagsmenÃ¼');
     }
   } catch (e) {
     console.error('Chaltebrunne Fehler:', e.message);
