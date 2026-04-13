@@ -1,0 +1,22 @@
+{
+  "name": "Mahlzeit",
+  "short_name": "Mahlzeit",
+  "description": "Mittagessen-Abstimmung für das Team",
+  "start_url": "/mahlzeit/",
+  "display": "standalone",
+  "background_color": "#F5EDDA",
+  "theme_color": "#F5EDDA",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
