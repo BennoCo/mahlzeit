@@ -28,7 +28,7 @@ function supabaseUpdate(name, daily) {
     const req = https.request(options, (res) => {
       let d = '';
       res.on('data', c => d += c);
-      res.on('end', () => { console.log(`âœ“ Updated "${name}":\n${daily}`); resolve(); });
+      res.on('end', () => { console.log(`✓ Updated "${name}":\n${daily}`); resolve(); });
     });
     req.on('error', reject);
     req.write(body);
@@ -66,7 +66,7 @@ async function scrapeChalteBrunne() {
 
     const allDays = ['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag'];
     const otherDays = allDays.filter(d => d !== day);
-    const stopWords = ['was unser', 'bio-fleisch', 'tÃ¤glich frisch', 'biologische', 'mittagsmenus', 'Ã¶ffnungszeiten', 'reservierung', 'takeaway', 'take-away', 'jetzt'];
+    const stopWords = ['was unser', 'bio-fleisch', 'täglich frisch', 'biologische', 'mittagsmenus', 'öffnungszeiten', 'reservierung', 'takeaway', 'take-away', 'jetzt'];
 
     let dayIdx = -1;
     for (let i = 0; i < lines.length; i++) {
@@ -82,7 +82,7 @@ async function scrapeChalteBrunne() {
     const menuLines = [];
     for (let i = dayIdx + 1; i < lines.length; i++) {
       const line = lines[i].replace(/\*\*/g, '').trim();
-      // Stopp bei nÃ¤chstem Tag
+      // Stopp bei nächstem Tag
       if (otherDays.some(d => line === d)) break;
       // Stopp bei generischen Beschreibungstexten
       if (stopWords.some(w => line.toLowerCase().startsWith(w))) break;
@@ -110,10 +110,12 @@ async function scrapeKarl() {
     let inTagesmenu = false;
     const menuLines = [];
     for (let i = 0; i < lines.length; i++) {
-      if (/tagesmenu/i.test(lines[i])) { inTagesmenu = true; continue; }
+      if (/tageskarte|tagesmenu/i.test(lines[i])) { inTagesmenu = true; continue; }
       if (inTagesmenu) {
-        if (/hauptgerichte|vorspeisen|snacks|sÃ¼sses/i.test(lines[i])) break;
+        if (/hauptgerichte|vorspeisen|snacks|süsses/i.test(lines[i])) break;
         if (/keine tagesgerichte/i.test(lines[i])) { inTagesmenu = false; break; }
+        // Preise und Klein/Gross überspringen
+        if (/^\d+[\.,]\d+$|^Klein$|^Gross$/i.test(lines[i].trim())) continue;
         if (lines[i].length > 4) menuLines.push(lines[i]);
       }
     }
@@ -128,8 +130,8 @@ async function scrapeKarl() {
     const mainLines = [];
     for (const line of lines) {
       if (/hauptgerichte/i.test(line)) { inMain = true; continue; }
-      if (inMain && /vorspeisen|snacks|sÃ¼sses/i.test(line)) break;
-      if (inMain && line.length > 8 && !/^\d+[\.,]/.test(line) && !/^CHF/i.test(line)) {
+      if (inMain && /vorspeisen|snacks|süsses/i.test(line)) break;
+      if (inMain && line.length > 8 && !/^\d+[\.,]/.test(line) && !/^CHF/i.test(line) && !/^Klein$|^Gross$/i.test(line)) {
         mainLines.push(line);
         if (mainLines.length >= 4) break;
       }
@@ -137,7 +139,7 @@ async function scrapeKarl() {
     if (mainLines.length > 0) {
       await supabaseUpdate('Karl der Grosse', mainLines.join('\n').substring(0, 300));
     } else {
-      console.log('Karl: Kein MenÃ¼ gefunden');
+      console.log('Karl: Kein Menü gefunden');
     }
   } catch (e) {
     console.error('Karl Fehler:', e.message);
@@ -145,7 +147,7 @@ async function scrapeKarl() {
 }
 
 (async () => {
-  console.log(`Mahlzeit Scraper â€” ${getDayName()}`);
+  console.log(`Mahlzeit Scraper — ${getDayName()}`);
   await scrapeChalteBrunne();
   await scrapeKarl();
   console.log('Fertig.');
