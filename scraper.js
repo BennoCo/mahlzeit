@@ -97,38 +97,38 @@ async function scrapeKarl(browser) {
     const text = await getPageText(browser, 'https://www.karldergrosse.ch/bistro/karte');
     const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
+    const skipLine = l => /^\d+[\.,]\d+$|^Klein$|^Gross$/i.test(l) || l.length <= 4;
+
     // Tageskarte-Abschnitt finden
     const tageskartaIdx = lines.findIndex(l => /tageskarte|tagesmenu/i.test(l));
-
     if (tageskartaIdx !== -1) {
       const menuLines = [];
       for (let i = tageskartaIdx + 1; i < lines.length; i++) {
         const line = lines[i].trim();
         if (/hauptgerichte|vorspeisen|snacks|s\u00fcsses/i.test(line)) break;
+        // Kein Tagesmenu vorhanden â†’ Fallback zu Hauptgerichte
         if (/keine tagesgerichte/i.test(line)) break;
-        if (/^\d+[\.,]\d+$|^Klein$|^Gross$/i.test(line)) continue;
-        if (line.length > 4) menuLines.push(line);
+        if (skipLine(line)) continue;
+        menuLines.push(line);
       }
       if (menuLines.length > 0) {
-        await supabaseUpdate('Karl der Grosse', menuLines.join('\n').substring(0, 300));
+        await supabaseUpdate('Karl der Grosse', menuLines.join('\n').substring(0, 500));
         return;
       }
     }
 
-    // Fallback: Hauptgerichte
-    const hauptIdx = lines.findIndex(l => /hauptgerichte/i.test(l));
+    // Fallback: ALLE Hauptgerichte (Titel + Beschreibung)
+    const hauptIdx = lines.findIndex(l => /^hauptgerichte$/i.test(l));
     if (hauptIdx !== -1) {
       const mainLines = [];
       for (let i = hauptIdx + 1; i < lines.length; i++) {
         const line = lines[i].trim();
-        if (/vorspeisen|snacks|s\u00fcsses/i.test(line)) break;
-        if (line.length > 8 && !/^\d+[\.,]/.test(line) && !/^CHF/i.test(line) && !/^Klein$|^Gross$/i.test(line)) {
-          mainLines.push(line);
-          if (mainLines.length >= 4) break;
-        }
+        if (/^vorspeisen$|^snacks$|^s\u00fcsses$/i.test(line)) break;
+        if (skipLine(line)) continue;
+        mainLines.push(line);
       }
       if (mainLines.length > 0) {
-        await supabaseUpdate('Karl der Grosse', mainLines.join('\n').substring(0, 300));
+        await supabaseUpdate('Karl der Grosse', mainLines.join('\n').substring(0, 500));
         return;
       }
     }
